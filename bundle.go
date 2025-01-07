@@ -11,7 +11,7 @@ import (
 
 type Bundle struct {
 	transactions      []*types.Transaction
-	blocknumber       uint64
+	targetBlocknumber       uint64
 	minTimestamp      uint64
 	maxTimestamp      uint64
 	revertingTxHashes []string
@@ -23,14 +23,14 @@ type Bundle struct {
 
 func NewBundle() *Bundle {
 	return &Bundle{
-		blocknumber: 0,
+		targetBlocknumber: 0,
 	}
 }
 
 func NewBundleWithTransactions(transactions []*types.Transaction) *Bundle {
 	return &Bundle{
 		transactions: transactions,
-		blocknumber:  0,
+		targetBlocknumber:  0,
 	}
 }
 
@@ -38,8 +38,8 @@ func (b *Bundle) Transactions() []*types.Transaction {
 	return b.transactions
 }
 
-func (b *Bundle) BlockNumber() uint64 {
-	return b.blocknumber
+func (b *Bundle) TargetBlockNumber() uint64 {
+	return b.targetBlocknumber
 }
 
 func (b *Bundle) MinTimestamp() uint64 {
@@ -76,8 +76,13 @@ func (b *Bundle) AddTransactions(txs []*types.Transaction) {
 
 // SetBlockNumber sets the block number for which this bundle is valid
 // If set to 0, the bundle is valid for the next block
-func (b *Bundle) SetBlockNumber(blocknumber uint64) {
-	b.blocknumber = blocknumber
+func (b *Bundle) SetTargetBlockNumber(blocknumber uint64) error {
+	if b.targetBlocknumber != 0 {
+		return errors.New("targetBlocknumber already set")
+	}
+
+	b.targetBlocknumber = blocknumber
+	return nil
 }
 
 // SetMinTimestamp sets the minimum timestamp for which this bundle is valid, in seconds since the unix epoch
@@ -132,6 +137,50 @@ func (b *Bundle) MaximumGasFeePaid() (feePaid *big.Int) {
 	return feePaid
 }
 
-func (b *Bundle) UseAllBuilders() {
-	b.builders = AllBuilders
+func (b *Bundle) UseAllBuilders(networkId uint64) {
+	if networkId == 1 {
+		b.builders = AllBuilders
+	} else if networkId == 5 {
+		b.builders = []string{"https://relay-goerli.flashbots.net"}
+	} else if networkId == 11155111 {
+		b.builders = []string{"https://relay-sepolia.flashbots.net"}
+	} else if networkId == 17000 {
+		b.builders = []string{"https://relay-holesky.flashbots.net"}
+	}
+}
+
+func (b *Bundle) Copy() *Bundle {
+	transactions := make([]*types.Transaction, len(b.transactions))
+	copy(transactions, b.transactions)
+
+	revertingTxHashes := make([]string, len(b.revertingTxHashes))
+	copy(revertingTxHashes, b.revertingTxHashes)
+
+	builders := make([]string, len(b.builders))
+	copy(builders, b.builders)
+
+	return &Bundle{
+		transactions:      transactions,
+		targetBlocknumber: b.targetBlocknumber,
+		minTimestamp:      b.minTimestamp,
+		maxTimestamp:      b.maxTimestamp,
+		revertingTxHashes: revertingTxHashes,
+		replacementUuid:   b.replacementUuid,
+		builders:          builders,
+		bundleHash:        b.bundleHash,
+	}
+}
+
+func (b *Bundle) GetBundelsForNextNBlocks(n uint64) ([]Bundle, error) {
+	if b.targetBlocknumber == 0 {
+		return nil, errors.New("targetBlocknumber not set")
+	}
+
+	bundles := make([]Bundle, n)
+	for i := uint64(0); i < n; i++ {
+		bundles[i] = *b.Copy()
+		bundles[i].targetBlocknumber += i
+	}
+	
+	return bundles, nil
 }
