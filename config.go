@@ -16,3 +16,25 @@ const (
 	JsonRpcInvalidParams  = -32602
 	JsonRpcInternalError  = -32603
 )
+
+var AllBuilders = []string{
+	"flashbots",
+	"f1b.io",
+	"rsync",
+	"beaverbuild.org",
+	"builder0x69",
+	"Titan",
+	"EigenPhi",
+	"boba-builder",
+	"Gambit Labs",
+	"payload",
+	"Loki",
+	"BuildAI",
+	"JetBuilder",
+	"tbuilder",
+	"penguinbuild",
+	"bobthebuilder",
+	"BTCS",
+	"bloXroute",
+	"Blockbeelder",
+}

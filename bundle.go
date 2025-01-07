@@ -131,3 +131,7 @@ func (b *Bundle) MaximumGasFeePaid() (feePaid *big.Int) {
 
 	return feePaid
 }
+
+func (b *Bundle) UseAllBuilders() {
+	b.builders = AllBuilders
+}
