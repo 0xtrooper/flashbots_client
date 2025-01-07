@@ -14,6 +14,9 @@ Flashbots Client aims to simplify the process of sending and simulating bundles 
 - Simulate bundle execution
 - Wait for bundle inclusion
 - Update fee refund recipient
+- Duplicate bundles
+- Get bundle statistics
+- Cancel bundles
 - To be extended...
 
 ## Installation
@@ -87,6 +90,32 @@ if success {
 } else {
     log.Println("Simulation failed")
 }
+```
+
+### Getting Bundle Statistics
+
+To get statistics for a bundle, use the `GetBundleStatsV2` method:
+
+```go
+stats, err := client.GetBundleStatsV2(bundle)
+if err != nil {
+    log.Fatalf("Failed to get bundle stats: %v", err)
+}
+
+log.Printf("Bundle stats: %+v", stats)
+```
+
+### Canceling a Bundle
+
+To cancel a bundle, use the `CancelBundle` method:
+
+```go
+err := client.CancelBundle(bundle.ReplacementUuid())
+if err != nil {
+    log.Fatalf("Failed to cancel bundle: %v", err)
+}
+
+log.Println("Bundle canceled successfully")
 ```
 
 ## Contributing
