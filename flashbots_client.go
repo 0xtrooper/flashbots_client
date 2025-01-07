@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -113,7 +111,7 @@ type FlashbotsClient struct {
 	nextRequestIdMutex sync.Mutex
 }
 
-func NewCLientRpcString(ethRpcStr string, searcherSecret *ecdsa.PrivateKey) (*FlashbotsClient, error) {
+func NewClientRpcString(ethRpcStr string, searcherSecret *ecdsa.PrivateKey) (*FlashbotsClient, error) {
 	if ethRpcStr != "" {
 		return nil, errors.New("ethRpc is required")
 	}
@@ -150,7 +148,7 @@ func NewClient(ethRpc *ethclient.Client, searcherSecret *ecdsa.PrivateKey) (*Fla
 
 	// Generate a random secret if searcherSecret is nil
 	if searcherSecret == nil {
-		privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+		privateKey, err := crypto.GenerateKey()
 		if err != nil {
 			return nil, fmt.Errorf("failed to generate random secret: %v", err)
 		}
@@ -215,7 +213,7 @@ func (client *FlashbotsClient) CallWithAditionalHeaders(method string, headers m
 	if err != nil {
 		return nil, errors.Join(errors.New("error signing payload"), err)
 	}
-	req.Header.Set("X-Flashbots-Signature", client.searcherAddress.Hex()+":"+hexutil.Encode(signature))
+	req.Header.Add("X-Flashbots-Signature", client.searcherAddress.Hex()+":"+hexutil.Encode(signature))
 
 	response, err := client.client.Do(req)
 	if response != nil {
@@ -243,10 +241,12 @@ func (client *FlashbotsClient) CallWithAditionalHeaders(method string, headers m
 }
 
 func (client *FlashbotsClient) SendBundle(bundle *Bundle) (common.Hash, error) {
-	hexEncodedBlocknumber, err := client.hexEncodeBlocknumber(bundle.blocknumber)
+	hexEncodedBlocknumber, sendTargetBlockNumber, err := client.hexEncodeBlocknumbeInTheFuture(bundle.targetBlocknumber)
 	if err != nil {
 		return common.Hash{}, errors.Join(errors.New("error encoding block number"), err)
 	}
+
+	bundle.targetBlocknumber = sendTargetBlockNumber
 
 	rawTransactions, err := convertTransactionsToRawStrings(bundle.transactions)
 	if err != nil {
@@ -298,16 +298,16 @@ func (client *FlashbotsClient) SendBundle(bundle *Bundle) (common.Hash, error) {
 // SimulateBundle simulates the execution of a bundle
 // The stateBlocknumber parameter is the block number at which the simulation should start, 0 for the current block
 func (client *FlashbotsClient) SimulateBundle(bundle *Bundle, stateBlocknumber uint64) (*SimulationResultBundle, bool, error) {
-	hexEncodedBlocknumber, err := client.hexEncodeBlocknumber(bundle.blocknumber)
+	hexEncodedBlocknumber, _, err := client.hexEncodeBlocknumber(bundle.targetBlocknumber)
 	if err != nil {
 		return nil, false, errors.Join(errors.New("error encoding block number"), err)
 	}
 
 	var hexEncodedBlocknumberState string
-	if stateBlocknumber == bundle.blocknumber {
+	if stateBlocknumber == bundle.targetBlocknumber {
 		hexEncodedBlocknumberState = hexEncodedBlocknumber
 	} else {
-		hexEncodedBlocknumberState, err = client.hexEncodeBlocknumber(stateBlocknumber)
+		hexEncodedBlocknumberState, _, err = client.hexEncodeBlocknumber(stateBlocknumber)
 		if err != nil {
 			return nil, false, errors.Join(errors.New("error encoding state block number"), err)
 		}
@@ -400,17 +400,35 @@ func (client *FlashbotsClient) WaitForBundleInclusionWithTargetBlock(ctx context
 	}
 }
 
-func (client *FlashbotsClient) hexEncodeBlocknumber(blocknumber uint64) (string, error) {
+func (client *FlashbotsClient) CheckBundleIncusion(ctx context.Context, bundle *Bundle) (bool, error) {
+	return client.transactionsIncluded(ctx, bundle.Transactions())
+}
+
+func (client *FlashbotsClient) hexEncodeBlocknumber(blocknumber uint64) (string, uint64, error) {
 	if blocknumber == 0 {
 		n, err := client.getBlocknumber(context.Background())
 		if err != nil {
-			return "", errors.Join(errors.New("error getting blocknumber"), err)
+			return "", 0, errors.Join(errors.New("error getting blocknumber"), err)
 		}
 
 		blocknumber = n
 	}
 
-	return fmt.Sprintf("0x%x", blocknumber), nil
+	return fmt.Sprintf("0x%x", blocknumber), blocknumber, nil
+}
+
+func (client *FlashbotsClient) hexEncodeBlocknumbeInTheFuture(blocknumber uint64) (string, uint64, error) {
+	if blocknumber == 0 {
+		n, err := client.getBlocknumber(context.Background())
+		if err != nil {
+			return "", 0, errors.Join(errors.New("error getting blocknumber"), err)
+		}
+
+		// use next block
+		blocknumber = n + 1
+	}
+
+	return fmt.Sprintf("0x%x", blocknumber), blocknumber, nil
 }
 
 func (client *FlashbotsClient) getBlocknumber(ctx context.Context) (uint64, error) {
