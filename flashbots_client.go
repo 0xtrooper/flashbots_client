@@ -352,6 +352,55 @@ func (client *FlashbotsClient) SimulateBundle(bundle *Bundle, stateBlocknumber u
 	return &simulationResult, simulationResult.FirstRevert == common.Hash{}, nil
 }
 
+type BundleStatsV2 struct {
+	IsHighPriority       bool   `json:"isHighPriority"`
+	IsSimulated          bool   `json:"isSimulated"`
+	SimulatedAt          string `json:"simulatedAt"`
+	ReceivedAt           string `json:"receivedAt"`
+	ConsideredByBuilders []struct {
+		Pubkey    string `json:"pubkey"`
+		Timestamp string `json:"timestamp"`
+	} `json:"consideredByBuildersAt"`
+	SealedByBuilders []struct {
+		Pubkey    string `json:"pubkey"`
+		Timestamp string `json:"timestamp"`
+	} `json:"sealedByBuildersAt"`
+}
+
+
+func (client *FlashbotsClient) GetBundleStatsV2(bundle *Bundle) (*BundleStatsV2, error) {
+	params := map[string]interface{}{
+		"bundleHash": bundle.bundleHash.Hex(),
+		"blockNumber": fmt.Sprintf("0x%x", bundle.targetBlocknumber),
+	}
+
+	result, err := client.Call("flashbots_getBundleStatsV2", params)
+	if err != nil {
+		return nil, errors.Join(errors.New("error calling flashbots"), err)
+	}
+
+	var response BundleStatsV2
+	err = json.Unmarshal(result, &response)
+	if err != nil {
+		return nil, errors.Join(errors.New("error parsing response"), err)
+	}
+
+	return &response, nil
+}
+
+func (client *FlashbotsClient) CancelBundle(uuid string) (error) {
+	params := map[string]interface{}{
+		"replacementUuid": uuid,
+	}
+
+	_, err := client.Call("eth_cancelBundle", params)
+	if err != nil {
+		return errors.Join(errors.New("error calling flashbots"), err)
+	}
+
+	return nil
+}
+
 // WaitForBundleInclusion waits for a bundle to be included in a block
 // The targetBlock parameter is the block number after which the bundle should be included, 0 for now limit
 // The timeout parameter is the maximum time to wait for the bundle to be included
