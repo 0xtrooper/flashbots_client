@@ -11,7 +11,7 @@ import (
 
 type Bundle struct {
 	transactions      []*types.Transaction
-	targetBlocknumber       uint64
+	targetBlocknumber uint64
 	minTimestamp      uint64
 	maxTimestamp      uint64
 	revertingTxHashes []string
@@ -29,8 +29,8 @@ func NewBundle() *Bundle {
 
 func NewBundleWithTransactions(transactions []*types.Transaction) *Bundle {
 	return &Bundle{
-		transactions: transactions,
-		targetBlocknumber:  0,
+		transactions:      transactions,
+		targetBlocknumber: 0,
 	}
 }
 
@@ -181,6 +181,6 @@ func (b *Bundle) GetBundelsForNextNBlocks(n uint64) ([]Bundle, error) {
 		bundles[i] = *b.Copy()
 		bundles[i].targetBlocknumber += i
 	}
-	
+
 	return bundles, nil
 }

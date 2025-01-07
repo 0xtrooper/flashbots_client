@@ -254,10 +254,10 @@ func (client *FlashbotsClient) SendBundle(bundle *Bundle) (common.Hash, error) {
 	}
 
 	params := map[string]interface{}{
-		"txs":               rawTransactions,
-		"blockNumber":       hexEncodedBlocknumber,
+		"txs":         rawTransactions,
+		"blockNumber": hexEncodedBlocknumber,
 	}
-	
+
 	if bundle.minTimestamp != 0 {
 		params["minTimestamp"] = bundle.minTimestamp
 	}
@@ -367,10 +367,9 @@ type BundleStatsV2 struct {
 	} `json:"sealedByBuildersAt"`
 }
 
-
 func (client *FlashbotsClient) GetBundleStatsV2(bundle *Bundle) (*BundleStatsV2, error) {
 	params := map[string]interface{}{
-		"bundleHash": bundle.bundleHash.Hex(),
+		"bundleHash":  bundle.bundleHash.Hex(),
 		"blockNumber": fmt.Sprintf("0x%x", bundle.targetBlocknumber),
 	}
 
@@ -388,7 +387,7 @@ func (client *FlashbotsClient) GetBundleStatsV2(bundle *Bundle) (*BundleStatsV2,
 	return &response, nil
 }
 
-func (client *FlashbotsClient) CancelBundle(uuid string) (error) {
+func (client *FlashbotsClient) CancelBundle(uuid string) error {
 	params := map[string]interface{}{
 		"replacementUuid": uuid,
 	}
