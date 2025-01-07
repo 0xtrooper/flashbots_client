@@ -256,10 +256,26 @@ func (client *FlashbotsClient) SendBundle(bundle *Bundle) (common.Hash, error) {
 	params := map[string]interface{}{
 		"txs":               rawTransactions,
 		"blockNumber":       hexEncodedBlocknumber,
-		"minTimestamp":      bundle.minTimestamp,
-		"maxTimestamp":      bundle.maxTimestamp,
-		"revertingTxHashes": bundle.revertingTxHashes,
-		"replacementUuid":   bundle.replacementUuid,
+	}
+	
+	if bundle.minTimestamp != 0 {
+		params["minTimestamp"] = bundle.minTimestamp
+	}
+
+	if bundle.maxTimestamp != 0 {
+		params["maxTimestamp"] = bundle.maxTimestamp
+	}
+
+	if len(bundle.revertingTxHashes) > 0 {
+		params["revertingTxHashes"] = bundle.revertingTxHashes
+	}
+
+	if bundle.replacementUuid != "" {
+		params["replacementUuid"] = bundle.replacementUuid
+	}
+
+	if len(bundle.builders) > 0 {
+		params["builders"] = bundle.builders
 	}
 
 	res, err := client.Call("eth_sendBundle", params)
