@@ -17,7 +17,7 @@ type Bundle struct {
 	maxTimestamp      int64
 	revertingTxHashes []string
 	replacementUuid   string
-	uuidAlreadySend  bool
+	uuidAlreadySend   bool
 	builders          []string
 
 	bundleHash common.Hash
@@ -26,15 +26,15 @@ type Bundle struct {
 
 func NewBundle() *Bundle {
 	return &Bundle{
-		replacementUuid: uuid.New().String(),
+		replacementUuid:   uuid.New().String(),
 		targetBlocknumber: 0,
 	}
 }
 
 func NewBundleWithTransactions(transactions []*types.Transaction) *Bundle {
 	return &Bundle{
-		minTimestamp:  time.Now().Unix(),
-		replacementUuid: uuid.New().String(),
+		minTimestamp:      time.Now().Unix(),
+		replacementUuid:   uuid.New().String(),
 		transactions:      transactions,
 		targetBlocknumber: 0,
 	}
@@ -183,9 +183,9 @@ func (b *Bundle) GetBundelsForNextNBlocks(n uint64) ([]*Bundle, error) {
 	}
 
 	bundles := make([]*Bundle, n)
-	for i := uint64(1); i <= n; i++ {
+	for i := uint64(0); i < n; i++ {
 		bundles[i] = b.Copy()
-		bundles[i].targetBlocknumber += i
+		bundles[i].targetBlocknumber += (i + 1)
 	}
 
 	return bundles, nil
