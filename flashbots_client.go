@@ -12,7 +12,6 @@ import (
 	"log/slog"
 	"math/big"
 	"net/http"
-	"os"
 	"sync"
 	"time"
 
@@ -111,7 +110,7 @@ type FlashbotsClient struct {
 	nextRequestIdMutex sync.Mutex
 }
 
-func NewClientRpcString(ethRpcStr string, searcherSecret *ecdsa.PrivateKey) (*FlashbotsClient, error) {
+func NewClientRpcString(logger *slog.Logger, ethRpcStr string, searcherSecret *ecdsa.PrivateKey) (*FlashbotsClient, error) {
 	if ethRpcStr != "" {
 		return nil, errors.New("ethRpc is required")
 	}
@@ -121,10 +120,14 @@ func NewClientRpcString(ethRpcStr string, searcherSecret *ecdsa.PrivateKey) (*Fl
 		return nil, errors.Join(errors.New("error connecting to rpc client"), err)
 	}
 
-	return NewClient(rpcClient, searcherSecret)
+	return NewClient(logger, rpcClient, searcherSecret)
 }
 
-func NewClient(ethRpc *ethclient.Client, searcherSecret *ecdsa.PrivateKey) (*FlashbotsClient, error) {
+func NewClient(logger *slog.Logger, ethRpc *ethclient.Client, searcherSecret *ecdsa.PrivateKey) (*FlashbotsClient, error) {
+	if logger != nil {
+		logger = logger.With(slog.String("module", "flashbots_client"))
+	}
+
 	ctx := context.Background()
 	timeoutContext, cancel := context.WithTimeout(ctx, 2*time.Second)
 
@@ -139,8 +142,6 @@ func NewClient(ethRpc *ethclient.Client, searcherSecret *ecdsa.PrivateKey) (*Fla
 	if !ok {
 		return nil, fmt.Errorf("network %s not supported", networkId)
 	}
-
-	logger := slog.New(slog.NewJSONHandler(os.Stderr, nil))
 
 	client := http.Client{
 		Timeout: 15 * time.Second,
@@ -162,9 +163,11 @@ func NewClient(ethRpc *ethclient.Client, searcherSecret *ecdsa.PrivateKey) (*Fla
 	}
 	searcherAddress := crypto.PubkeyToAddress(*searcherPublicKeyECDSA)
 
+
+
 	fbClinet := FlashbotsClient{
 		url:                url,
-		logger:             logger.With(slog.String("module", "flashbots_client")),
+		logger:             logger,
 		client:             client,
 		ethRpc:             ethRpc,
 		searcherSecret:     searcherSecret,
@@ -474,8 +477,10 @@ func (client *FlashbotsClient) CancelBundle(uuid string) error {
 }
 
 // WaitForBundleInclusion waits for a bundle to be included in a block
-func (client *FlashbotsClient) WaitForBundleInclusion(ctx context.Context, bundle *Bundle, targetBlock uint64) (bool, error) {
+func (client *FlashbotsClient) WaitForBundleInclusion(ctx context.Context, bundle *Bundle) (bool, error) {
+	targetBlock := bundle.TargetBlockNumber()
 
+	firstTime := true
 	var lastBlockChecked uint64
 	txs := bundle.Transactions()
 	for {
@@ -512,6 +517,35 @@ func (client *FlashbotsClient) WaitForBundleInclusion(ctx context.Context, bundl
 
 		// 5. Not past the sealed block yet; sleep and poll again
 		time.Sleep(1 * time.Second)
+
+		if client.logger != nil {
+			if client.logger.Enabled(ctx, slog.LevelDebug) {
+				stats, err := client.GetBundleStats(bundle)
+				if err != nil {
+					client.logger.Warn("failed to get bundle stats", slog.String("error", err.Error()))
+					continue
+				}
+
+				if !stats.IsSimulated {
+					client.logger.Debug("Bundle not yet seen by relay", slog.Uint64("targetBlock", targetBlock))		
+				} else {
+					if firstTime {
+						client.logger.Debug("Bundle received and simulated", 
+							slog.Uint64("targetBlock", targetBlock),
+							slog.String("receivedAt", stats.ReceivedAt),
+							slog.String("simulatedAt", stats.SimulatedAt),
+						)
+						firstTime = false
+					}
+					
+					client.logger.Debug("Bundle considered or sealed by builders", 
+						slog.Uint64("targetBlock", targetBlock),
+						slog.Int("consideredByBuilders", len(stats.ConsideredByBuilders)),
+						slog.Int("sealedByBuilders", len(stats.SealedByBuilders)),
+					)
+				}
+			}
+		}
 	}
 }
 
