@@ -301,6 +301,26 @@ func (client *FlashbotsClient) SendBundle(bundle *Bundle) (common.Hash, bool, er
 	return common.HexToHash(response.BundleHash), bundle.isSmart, nil
 }
 
+func (client *FlashbotsClient) SendBundleNTimes(originalBundle *Bundle, n uint64) ([]*Bundle, common.Hash, bool, error) {
+	bundlesToSend := []*Bundle{originalBundle}
+	nextBundles, err := originalBundle.GetBundelsForNextNBlocks(n - 1)
+	if err != nil {
+		return bundlesToSend, common.Hash{}, false, errors.Join(errors.New("error getting bundles for next n blocks"), err)
+	}
+
+	bundlesToSend = append(bundlesToSend, nextBundles...)
+	var hash common.Hash 
+	var smart bool
+	for _, bundle := range bundlesToSend {
+		hash, smart, err = client.SendBundle(bundle)
+		if err != nil {
+			return bundlesToSend, common.Hash{}, false, errors.Join(errors.New("error sending bundle"), err)
+		}
+	}
+
+	return bundlesToSend, hash, smart, nil
+}
+
 // SimulateBundle simulates the execution of a bundle
 // The stateBlocknumber parameter is the block number at which the simulation should start, 0 for the current block
 func (client *FlashbotsClient) SimulateBundle(bundle *Bundle, stateBlocknumber uint64) (*SimulationResultBundle, bool, error) {
