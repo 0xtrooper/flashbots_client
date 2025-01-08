@@ -297,6 +297,7 @@ func (client *FlashbotsClient) SendBundle(bundle *Bundle) (common.Hash, bool, er
 
 	bundle.bundleHash = common.HexToHash(response.BundleHash)
 	bundle.isSmart = response.Smart
+	bundle.uuidAlreadySend = true
 	return common.HexToHash(response.BundleHash), bundle.isSmart, nil
 }
 
