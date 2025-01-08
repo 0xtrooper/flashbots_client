@@ -163,8 +163,6 @@ func NewClient(logger *slog.Logger, ethRpc *ethclient.Client, searcherSecret *ec
 	}
 	searcherAddress := crypto.PubkeyToAddress(*searcherPublicKeyECDSA)
 
-
-
 	fbClinet := FlashbotsClient{
 		url:                url,
 		logger:             logger,
@@ -301,17 +299,32 @@ func (client *FlashbotsClient) SendBundle(bundle *Bundle) (common.Hash, bool, er
 	return common.HexToHash(response.BundleHash), bundle.isSmart, nil
 }
 
-func (client *FlashbotsClient) SendBundleNTimes(originalBundle *Bundle, n uint64) ([]*Bundle, common.Hash, bool, error) {
-	bundlesToSend := []*Bundle{originalBundle}
-	nextBundles, err := originalBundle.GetBundelsForNextNBlocks(n - 1)
+func (client *FlashbotsClient) SendBundleAndWait(ctx context.Context, bundle *Bundle) (bool, error) {
+	_, _, err := client.SendBundle(bundle)
 	if err != nil {
-		return bundlesToSend, common.Hash{}, false, errors.Join(errors.New("error getting bundles for next n blocks"), err)
+		return false, errors.Join(errors.New("error sending bundle"), err)
 	}
 
-	bundlesToSend = append(bundlesToSend, nextBundles...)
-	var hash common.Hash 
-	var smart bool
+	return client.WaitForBundleInclusion(ctx, bundle)
+}
+
+func (client *FlashbotsClient) SendBundleNTimes(originalBundle *Bundle, n uint64) (bundlesToSend []*Bundle, hash common.Hash, smart bool, err error) {
+	bundlesToSend = []*Bundle{originalBundle}
+
+	// create n-1 followup bundles
+	if n > 1 {
+		nextBundles, err := originalBundle.GetBundelsForNextNBlocks(n - 1)
+		if err != nil {
+			return bundlesToSend, common.Hash{}, false, errors.Join(errors.New("error getting bundles for next n blocks"), err)
+		}
+		bundlesToSend = append(bundlesToSend, nextBundles...)
+	}
+
 	for _, bundle := range bundlesToSend {
+		if client.logger != nil {
+			client.logger.Debug("sending bundle", slog.Uint64("targetBlock", bundle.targetBlocknumber))
+		}
+		
 		hash, smart, err = client.SendBundle(bundle)
 		if err != nil {
 			return bundlesToSend, common.Hash{}, false, errors.Join(errors.New("error sending bundle"), err)
@@ -319,6 +332,44 @@ func (client *FlashbotsClient) SendBundleNTimes(originalBundle *Bundle, n uint64
 	}
 
 	return bundlesToSend, hash, smart, nil
+}
+
+func (client *FlashbotsClient) SendNBundleAndWait(ctx context.Context, bundle *Bundle, n uint64) (bool, error) {
+	bundles, _, _, err := client.SendBundleNTimes(bundle, n)
+	if err != nil {
+		return false, errors.Join(errors.New("error sending bundle"), err)
+	}
+
+	var success bool
+	for _, nextBundle := range bundles {
+		if client.logger != nil {
+			client.logger.Debug("start waiting for bundle inclusion", slog.Uint64("targetBlock", nextBundle.targetBlocknumber))
+		}
+
+		success, err = client.WaitForBundleInclusion(ctx, nextBundle)
+		if err != nil {
+			if client.logger != nil {
+				client.logger.Warn("error waiting for bundle inclusion - this does not affect the remaining bundle", slog.String("error", err.Error()))
+			}
+
+			// do not return, wait for other bundles
+			continue
+		}
+
+		if success {
+			break
+		}
+	}
+
+	// cancel all bundles if one of them succeeded
+	if success {
+		err = client.CancelBundle(bundle.replacementUuid)
+		if err != nil && client.logger != nil {
+			client.logger.Warn("error canceling bundle - this does not affect the bundle", slog.String("error", err.Error()))
+		}
+	}
+
+	return success, nil
 }
 
 // SimulateBundle simulates the execution of a bundle
@@ -548,18 +599,18 @@ func (client *FlashbotsClient) WaitForBundleInclusion(ctx context.Context, bundl
 				}
 
 				if !stats.IsSimulated {
-					client.logger.Debug("Bundle not yet seen by relay", slog.Uint64("targetBlock", targetBlock))		
+					client.logger.Debug("Bundle not yet seen by relay", slog.Uint64("targetBlock", targetBlock))
 				} else {
 					if firstTime {
-						client.logger.Debug("Bundle received and simulated", 
+						client.logger.Debug("Bundle received and simulated",
 							slog.Uint64("targetBlock", targetBlock),
 							slog.String("receivedAt", stats.ReceivedAt),
 							slog.String("simulatedAt", stats.SimulatedAt),
 						)
 						firstTime = false
 					}
-					
-					client.logger.Debug("Bundle considered or sealed by builders", 
+
+					client.logger.Debug("Bundle considered or sealed by builders",
 						slog.Uint64("targetBlock", targetBlock),
 						slog.Int("consideredByBuilders", len(stats.ConsideredByBuilders)),
 						slog.Int("sealedByBuilders", len(stats.SealedByBuilders)),
