@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/google/uuid"
 )
 
 type Bundle struct {
@@ -16,6 +17,7 @@ type Bundle struct {
 	maxTimestamp      uint64
 	revertingTxHashes []string
 	replacementUuid   string
+	uuidAlreadySend  bool
 	builders          []string
 
 	bundleHash common.Hash
@@ -24,12 +26,14 @@ type Bundle struct {
 
 func NewBundle() *Bundle {
 	return &Bundle{
+		replacementUuid: uuid.New().String(),
 		targetBlocknumber: 0,
 	}
 }
 
 func NewBundleWithTransactions(transactions []*types.Transaction) *Bundle {
 	return &Bundle{
+		replacementUuid: uuid.New().String(),
 		transactions:      transactions,
 		targetBlocknumber: 0,
 	}
@@ -121,8 +125,8 @@ func (b *Bundle) SetRevertingTxHashes(revertingTxHashes []string) {
 
 // SetReplacementUuid sets the replacement UUID for this bundle that can be used to cancel/replace this bundle
 func (b *Bundle) SetReplacementUuid(replacementUuid string) error {
-	if b.replacementUuid != "" {
-		return errors.New("replacement UUID already set")
+	if b.uuidAlreadySend {
+		return errors.New("bundle already send to relay, cant change uuid")
 	}
 
 	b.replacementUuid = replacementUuid
