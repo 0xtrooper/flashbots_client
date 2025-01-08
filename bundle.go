@@ -176,14 +176,14 @@ func (b *Bundle) Copy() *Bundle {
 	}
 }
 
-func (b *Bundle) GetBundelsForNextNBlocks(n uint64) ([]Bundle, error) {
+func (b *Bundle) GetBundelsForNextNBlocks(n uint64) ([]*Bundle, error) {
 	if b.targetBlocknumber == 0 {
 		return nil, errors.New("targetBlocknumber not set")
 	}
 
-	bundles := make([]Bundle, n)
+	bundles := make([]*Bundle, n)
 	for i := uint64(1); i <= n; i++ {
-		bundles[i] = *b.Copy()
+		bundles[i] = b.Copy()
 		bundles[i].targetBlocknumber += i
 	}
 
