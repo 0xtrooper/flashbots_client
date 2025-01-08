@@ -13,8 +13,8 @@ import (
 type Bundle struct {
 	transactions      []*types.Transaction
 	targetBlocknumber uint64
-	minTimestamp      uint64
-	maxTimestamp      uint64
+	minTimestamp      int64
+	maxTimestamp      int64
 	revertingTxHashes []string
 	replacementUuid   string
 	uuidAlreadySend  bool
@@ -33,6 +33,7 @@ func NewBundle() *Bundle {
 
 func NewBundleWithTransactions(transactions []*types.Transaction) *Bundle {
 	return &Bundle{
+		minTimestamp:  time.Now().Unix(),
 		replacementUuid: uuid.New().String(),
 		transactions:      transactions,
 		targetBlocknumber: 0,
@@ -47,11 +48,11 @@ func (b *Bundle) TargetBlockNumber() uint64 {
 	return b.targetBlocknumber
 }
 
-func (b *Bundle) MinTimestamp() uint64 {
+func (b *Bundle) MinTimestamp() int64 {
 	return b.minTimestamp
 }
 
-func (b *Bundle) MaxTimestamp() uint64 {
+func (b *Bundle) MaxTimestamp() int64 {
 	return b.maxTimestamp
 }
 
@@ -91,7 +92,7 @@ func (b *Bundle) SetTargetBlockNumber(blocknumber uint64) error {
 }
 
 // SetMinTimestamp sets the minimum timestamp for which this bundle is valid, in seconds since the unix epoch
-func (b *Bundle) SetMinTimestamp(minTimestamp uint64) error {
+func (b *Bundle) SetMinTimestamp(minTimestamp int64) error {
 	if b.maxTimestamp != 0 && minTimestamp > b.maxTimestamp {
 		return errors.New("minTimestamp must be less than maxTimestamp")
 	}
@@ -101,11 +102,11 @@ func (b *Bundle) SetMinTimestamp(minTimestamp uint64) error {
 }
 
 // SetMaxTimestamp sets the maximum timestamp for which this bundle is valid, in seconds since the unix epoch
-func (b *Bundle) SetMaxTimestamp(maxTimestamp uint64) error {
+func (b *Bundle) SetMaxTimestamp(maxTimestamp int64) error {
 	if b.minTimestamp != 0 && maxTimestamp < b.minTimestamp {
 		return errors.New("maxTimestamp must be greater than minTimestamp")
 	}
-	if maxTimestamp < uint64(time.Now().Unix()) {
+	if maxTimestamp < time.Now().Unix() {
 		return errors.New("maxTimestamp must be in the future")
 	}
 
