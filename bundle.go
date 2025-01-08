@@ -19,6 +19,7 @@ type Bundle struct {
 	builders          []string
 
 	bundleHash common.Hash
+	isSmart    bool
 }
 
 func NewBundle() *Bundle {
@@ -177,7 +178,7 @@ func (b *Bundle) GetBundelsForNextNBlocks(n uint64) ([]Bundle, error) {
 	}
 
 	bundles := make([]Bundle, n)
-	for i := uint64(0); i < n; i++ {
+	for i := uint64(1); i <= n; i++ {
 		bundles[i] = *b.Copy()
 		bundles[i].targetBlocknumber += i
 	}

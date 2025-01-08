@@ -240,17 +240,17 @@ func (client *FlashbotsClient) CallWithAditionalHeaders(method string, headers m
 	return resp.Result, nil
 }
 
-func (client *FlashbotsClient) SendBundle(bundle *Bundle) (common.Hash, error) {
+func (client *FlashbotsClient) SendBundle(bundle *Bundle) (common.Hash, bool, error) {
 	hexEncodedBlocknumber, sendTargetBlockNumber, err := client.hexEncodeBlocknumbeInTheFuture(bundle.targetBlocknumber)
 	if err != nil {
-		return common.Hash{}, errors.Join(errors.New("error encoding block number"), err)
+		return common.Hash{}, false, errors.Join(errors.New("error encoding block number"), err)
 	}
 
 	bundle.targetBlocknumber = sendTargetBlockNumber
 
 	rawTransactions, err := convertTransactionsToRawStrings(bundle.transactions)
 	if err != nil {
-		return common.Hash{}, errors.Join(errors.New("error converting transactions to raw strings"), err)
+		return common.Hash{}, false, errors.Join(errors.New("error converting transactions to raw strings"), err)
 	}
 
 	params := map[string]interface{}{
@@ -280,19 +280,21 @@ func (client *FlashbotsClient) SendBundle(bundle *Bundle) (common.Hash, error) {
 
 	res, err := client.Call("eth_sendBundle", params)
 	if err != nil {
-		return common.Hash{}, errors.Join(errors.New("error calling flashbots"), err)
+		return common.Hash{}, false, errors.Join(errors.New("error calling flashbots"), err)
 	}
 
 	var response struct {
 		BundleHash string `json:"bundleHash"`
+		Smart      bool   `json:"smart"`
 	}
 	err = json.Unmarshal(res, &response)
 	if err != nil {
-		return common.Hash{}, errors.Join(errors.New("error parsing response"), err)
+		return common.Hash{}, false, errors.Join(errors.New("error parsing response"), err)
 	}
 
 	bundle.bundleHash = common.HexToHash(response.BundleHash)
-	return common.HexToHash(response.BundleHash), nil
+	bundle.isSmart = response.Smart
+	return common.HexToHash(response.BundleHash), bundle.isSmart, nil
 }
 
 // SimulateBundle simulates the execution of a bundle
@@ -352,6 +354,41 @@ func (client *FlashbotsClient) SimulateBundle(bundle *Bundle, stateBlocknumber u
 	return &simulationResult, simulationResult.FirstRevert == common.Hash{}, nil
 }
 
+type BundleStats struct {
+	IsHighPriority       bool   `json:"isHighPriority"`
+	IsSimulated          bool   `json:"isSimulated"`
+	SimulatedAt          string `json:"simulatedAt"`
+	ReceivedAt           string `json:"receivedAt"`
+	ConsideredByBuilders []struct {
+		Pubkey    string `json:"pubkey"`
+		Timestamp string `json:"timestamp"`
+	} `json:"consideredByBuildersAt"`
+	SealedByBuilders []struct {
+		Pubkey    string `json:"pubkey"`
+		Timestamp string `json:"timestamp"`
+	} `json:"sealedByBuildersAt"`
+}
+
+func (client *FlashbotsClient) GetBundleStats(bundle *Bundle) (*BundleStats, error) {
+	if bundle.isSmart {
+		return client.GetSbundleStats(bundle)
+	} else {
+		bundleV2, err := client.GetBundleStatsV2(bundle)
+		if err != nil {
+			return nil, err
+		}
+
+		return &BundleStats{
+			IsHighPriority:       bundleV2.IsHighPriority,
+			IsSimulated:          bundleV2.IsSimulated,
+			SimulatedAt:          bundleV2.SimulatedAt,
+			ReceivedAt:           bundleV2.ReceivedAt,
+			ConsideredByBuilders: bundleV2.ConsideredByBuilders,
+			SealedByBuilders:     bundleV2.SealedByBuilders,
+		}, nil
+	}
+}
+
 type BundleStatsV2 struct {
 	IsHighPriority       bool   `json:"isHighPriority"`
 	IsSimulated          bool   `json:"isSimulated"`
@@ -368,6 +405,14 @@ type BundleStatsV2 struct {
 }
 
 func (client *FlashbotsClient) GetBundleStatsV2(bundle *Bundle) (*BundleStatsV2, error) {
+	if bundle.bundleHash == (common.Hash{}) {
+		return nil, errors.New("bundle hash not set")
+	}
+
+	if bundle.isSmart {
+		return nil, errors.New("smart bundles are not supportedb by 'GetBundleStatsV2', use 'GetSbundleStats'")
+	}
+
 	params := map[string]interface{}{
 		"bundleHash":  bundle.bundleHash.Hex(),
 		"blockNumber": fmt.Sprintf("0x%x", bundle.targetBlocknumber),
@@ -379,6 +424,34 @@ func (client *FlashbotsClient) GetBundleStatsV2(bundle *Bundle) (*BundleStatsV2,
 	}
 
 	var response BundleStatsV2
+	err = json.Unmarshal(result, &response)
+	if err != nil {
+		return nil, errors.Join(errors.New("error parsing response"), err)
+	}
+
+	return &response, nil
+}
+
+func (client *FlashbotsClient) GetSbundleStats(bundle *Bundle) (*BundleStats, error) {
+	if bundle.bundleHash == (common.Hash{}) {
+		return nil, errors.New("bundle hash not set")
+	}
+
+	if !bundle.isSmart {
+		return nil, errors.New("non-smart bundles are not supported by 'GetSbundleStats', use 'GetBundleStatsV2'")
+	}
+
+	params := map[string]interface{}{
+		"bundleHash":  bundle.bundleHash.Hex(),
+		"blockNumber": fmt.Sprintf("0x%x", bundle.targetBlocknumber),
+	}
+
+	result, err := client.Call("flashbots_getSbundleStats", params)
+	if err != nil {
+		return nil, errors.Join(errors.New("error calling flashbots"), err)
+	}
+
+	var response BundleStats
 	err = json.Unmarshal(result, &response)
 	if err != nil {
 		return nil, errors.Join(errors.New("error parsing response"), err)
@@ -401,13 +474,7 @@ func (client *FlashbotsClient) CancelBundle(uuid string) error {
 }
 
 // WaitForBundleInclusion waits for a bundle to be included in a block
-// The targetBlock parameter is the block number after which the bundle should be included, 0 for now limit
-// The timeout parameter is the maximum time to wait for the bundle to be included
-func (client *FlashbotsClient) WaitForBundleInclusion(ctx context.Context, bundle *Bundle) (bool, error) {
-	return client.WaitForBundleInclusionWithTargetBlock(ctx, bundle, 999999999999)
-}
-
-func (client *FlashbotsClient) WaitForBundleInclusionWithTargetBlock(ctx context.Context, bundle *Bundle, targetBlock uint64) (bool, error) {
+func (client *FlashbotsClient) WaitForBundleInclusion(ctx context.Context, bundle *Bundle, targetBlock uint64) (bool, error) {
 
 	var lastBlockChecked uint64
 	txs := bundle.Transactions()
