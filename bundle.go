@@ -151,7 +151,7 @@ func (b *Bundle) UseAllBuilders(networkId uint64) {
 	} else if networkId == 11155111 {
 		b.builders = []string{"https://relay-sepolia.flashbots.net"}
 	} else if networkId == 17000 {
-		b.builders = []string{"https://relay-holesky.flashbots.net"}
+		b.builders = AllBuilders
 	}
 }
 
